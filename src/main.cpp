@@ -65,6 +65,8 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+
+
 int main() {
   uWS::Hub h;
 
@@ -91,15 +93,69 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-
+            
+          /**************
+             Transforms
+          ***************/
+          vector<double> car_ptsx ;
+          vector<double> car_ptsy ;
+          // Car opsition is takes as reference in car c-ordinate. 
+          //So all the variables becomes zero.
+          double car_px = 0;//px-px;
+          double car_py = 0;//py-py;
+          double car_psi =0;//psi-psi;
+            
+          for (int i =0; i < ptsx.size();i++){
+              double car_x = (ptsx[i]-px)* cos(0-psi) - (ptsy[i]-py)* sin(0-psi);
+              double car_y = (ptsx[i]-px) *sin(0-psi) + (ptsy[i]-py)*cos(0-psi);
+              car_ptsx.push_back(car_x);
+              car_ptsy.push_back(car_y);
+          }
+          /*****************************************/
+          
+          double * ptrx = &car_ptsx[0];
+		  Eigen::Map<Eigen::VectorXd> ptsxv(ptrx, 6); // No of variables 6
+		  double * ptry = &car_ptsy[0];
+		  Eigen::Map<Eigen::VectorXd> ptsyv(ptry, 6);
+            
           /*
           * TODO: Calculate steering angle and throttle using MPC.
           *
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+          //fit a polynomial to the x and y coordinates
+            
+          int order =3; // Order of Polynomial
+            //Fit the Polynomial
+          auto coeffs = polyfit(ptsxv,ptsyv,order);
+          //cross Track error- CTE
+          //double cte = polyeval(coeffs,car_px) - car_py;
+          double cte = polyeval(coeffs,0);
+          // calculate the orientation error-epsi
+          //double epsi = car_psi - atan(coeffs[1]) ;
+          double epsi = - atan(coeffs[1]) ;
+          
+          Eigen::VectorXd state(6);
+          //state << car_px, car_py, car_psi, v, cte, epsi;
+          state << 0, 0, 0, v, cte, epsi;
+            
+          /*
+          std::vector<double> x_vals = {state[0]};
+          std::vector<double> y_vals = {state[1]};
+          std::vector<double> psi_vals = {state[2]};
+          std::vector<double> v_vals = {state[3]};
+          std::vector<double> cte_vals = {state[4]};
+          std::vector<double> epsi_vals = {state[5]};
+          std::vector<double> delta_vals = {};
+          std::vector<double> a_vals = {};
+          */
+          const double Lf = 2.67;  
+          
+          auto vars = mpc.Solve(state,coeffs);//Actual waypoints Prediction based on Model
+                    
+          double steer_value = -vars[0]/(deg2rad(25)*Lf);// To Normalize
+          double throttle_value = vars[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -110,16 +166,38 @@ int main() {
           //Display the MPC predicted trajectory 
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
+            
+          for (int i=2;i<vars.size();i++){
+              if(i%2 ==0)
+              {
+                  mpc_x_vals.push_back(vars[i]);
+              }
+              else
+              {
+                  mpc_y_vals.push_back(vars[i]);
+              }
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
-
+            
+          
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+            
+          double genx_shift = 2.5;//Offset of X values of way points
+          int num_pred_points = 25; // No of points reference waypoints to predict and plot based on polynomial
+            
+          //Generating the IDEAL waypoints using the polynomial function - the waypoints i want to follow.
+          for (int i =1; i< num_pred_points;i++){
+              next_x_vals.push_back(genx_shift*i);
+              next_y_vals.push_back(polyeval(coeffs,genx_shift*i));
+          }
+
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
